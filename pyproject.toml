@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Ceyda Cinarel", email = "15624271+cceyda@users.noreply.github.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = []
 
 [build-system]
