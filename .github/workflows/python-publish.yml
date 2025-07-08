@@ -50,7 +50,7 @@ jobs:
       - name: Bump version
         run: |
           # NOTE: put your own version bump steps here.
-          uv version bump --${{ inputs.version }}
+          uv version --bump ${{ inputs.version }}
 
       - name: Commit version bump
         run: |
