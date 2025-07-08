@@ -5,6 +5,7 @@ This class consolidates ops for NER dict manipulation into a clean, chainable AP
 for working with results in different formats.
 """
 
+import re
 import string
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -249,6 +250,8 @@ class EntityList:
     def __init__(self, entities: Union[List[Dict[str, Any]], List['Entity']], source_text: Optional[str] = None):
         """
         Initialize EntityList with auto-detection.
+        During initialization, it will validate the entities and source text.
+        Sorts them by start position
         
         Args:
             entities: List of entity dictionaries or Entity objects
@@ -263,7 +266,9 @@ class EntityList:
                 elif isinstance(entity, Entity):
                     entity_objects.append(entity.copy())
 
-        self._entities = entity_objects
+        sorted_entities = sorted(entity_objects, key=lambda e: e.start, reverse=False)
+
+        self._entities = sorted_entities
         self._source_text = source_text
         if source_text:
             self._source_text = self._validate(self._source_text)
@@ -284,15 +289,14 @@ class EntityList:
         """
         if source_text is None:
             source_text = self._source_text
-            
-        if source_text is None:
-            raise ValueError("source_text must be provided or set on the EntityList")
-        
-        for entity in self._entities:
-            if entity.text != source_text[entity.start:entity.end]:
-                raise ValueError(
-                    f"Entity text '{entity.text}' does not match source text at span ({entity.start}, {entity.end})"
-                )
+            if source_text is None:
+                raise ValueError("source_text must be provided or set on the EntityList")
+        else:  # so we don't validate the source text every time
+            for entity in self._entities:
+                if entity.text != source_text[entity.start:entity.end]:
+                    raise ValueError(
+                        f"Entity text '{entity.text}' does not match source text at span ({entity.start}, {entity.end})"
+                    )
         return source_text
     
     @property
@@ -357,6 +361,15 @@ class EntityList:
 
     @staticmethod
     def allowed_merges(between_text: str, label: str) -> bool:
+        """
+        Check if the text between two entities allows merging based on label.
+
+        Args:
+            between_text: The text between two entities
+            label: The label of the current entity  # legacy
+        Returns:
+            bool: True if merging is allowed, False otherwise
+        """
         if between_text == " ":
             return True
         if between_text in string.punctuation:
@@ -366,7 +379,9 @@ class EntityList:
     # Entity Manipulation
     def merge_consecutive(self, source_text: Optional[str] = None) -> 'EntityList':
         """
-        Merge consecutive entities with the same label.
+        Merge consecutive entities with the same label. If source_text exists,
+        it will check if the text between entities allows merging based on allowed_merges logic,
+        otherwise it will merge only consecutive ones.
         
         Args:
             source_text: The source text that entities refer to
@@ -374,35 +389,36 @@ class EntityList:
         Returns:
             New EntityList with merged consecutive entities
         """
+        if source_text or self._source_text:
+            source_text = self._validate(source_text)
+        entity_list = self.sort(reverse=False)
 
-        if not self._entities:
-            return self.copy()
-    
-        source_text = self._validate(source_text)
-
-        merged_entities = [self._entities[0].copy()]
+        merged_entities = [entity_list._entities[0]]
         
-        for i in range(1, len(self._entities)):
+        for i in range(1, len(entity_list._entities)):
             prev_entity = merged_entities[-1]
-            current_entity = self._entities[i]
-            between_text = source_text[prev_entity.end:current_entity.start]
+            current_entity = entity_list._entities[i]
             current_label = current_entity.label
+            merge = False
+            between_text = ""
             
-            if (len(between_text) <= 1 and 
-                prev_entity.label == current_entity.label and (
-                    prev_entity.end == current_entity.start
-                    or (
-                        prev_entity.end + 1 == current_entity.start
-                        and self.allowed_merges(between_text, current_label)
-                    )
-                )):
-                prev_entity.end = current_entity.end
-                if self._text_field in current_entity:
-                    prev_entity.text = source_text[prev_entity.start:prev_entity.end]
-            else:
+            if (prev_entity.label == current_entity.label and prev_entity.end - current_entity.start <= 1):
+                if prev_entity.end == current_entity.start:
+                    merge = True
+                elif source_text and (prev_entity.end + 1 == current_entity.start):
+                    between_text = source_text[prev_entity.end:current_entity.start]
+                    if self.allowed_merges(between_text, current_label):
+                        prev_entity.end = current_entity.end
+                        merge = True
+                        
+            if not merge:
                 merged_entities.append(current_entity.copy())
+            else:
+                prev_entity.end = current_entity.end
+                if current_entity.text:
+                    prev_entity.text = prev_entity.text + between_text + current_entity.text
         
-        return EntityList(merged_entities, source_text=self._source_text)
+        return merged_entities
     
     def split_long_entities(self, max_length: int, source_text: Optional[str] = None) -> 'EntityList':
         """
@@ -559,9 +575,10 @@ class EntityList:
         
         return EntityList(entities_with_text, source_text=source_text)
     
-    def add_unk_entities(self, source_text: Optional[str] = None, ignore_whitespace= True) -> 'EntityList':
+    def add_unk_entities(self, source_text: Optional[str] = None) -> 'EntityList':
         """
         Add 'UNK' entities for spans in the source text that are not covered by existing entities.
+        Always ignores whitespace.
         
         Args:
             source_text: The source text to check for uncovered spans
@@ -574,40 +591,24 @@ class EntityList:
         
         source_text = self._validate(source_text)
         
-        uncovered_entities = []
-        last_end = 0
-        
-        for entity in self._entities:
-            if entity.start > last_end:
-                between_text = source_text[last_end:entity.start]
-                if between_text.strip() or not ignore_whitespace:  # Only add UNK if there is a non-empty span
-                    # Add UNK entity for uncovered span
-                    unk_entity = Entity({
-                        "start": last_end,
-                        "end": entity.start,
-                        "text": source_text[last_end:entity.start],
-                        "label": "UNK",
-                        "score": None
-                    })
-                    uncovered_entities.append(unk_entity)
-            uncovered_entities.append(entity.copy())
-            last_end = entity.end
-        
-        # Check for any remaining uncovered span at the end
-        if last_end < len(source_text):
-            # Add UNK entity for uncovered span at the end
-            between_text = source_text[last_end:]
-            if between_text.strip() or not ignore_whitespace:  # Only add UNK if there is a non-empty span
-                unk_entity = Entity({
-                    "start": last_end,
-                    "end": len(source_text),
-                    "text": source_text[last_end:],
-                    "label": "UNK",
-                    "score": None
-                })
-                uncovered_entities.append(unk_entity)
-        
-        return EntityList(uncovered_entities, source_text=source_text)
+        placeholder = list(source_text)
+        for r in self._entities:
+            placeholder[r.start:r.end]= " " * (r.end-r.start)
+
+        placeholder = "".join(placeholder)
+        unk_entities = []
+        for match in re.finditer(r'\S+', placeholder):
+            start = match.start()
+            end = match.end()
+            unk_entities.append(Entity({
+                "start": start,
+                "end": end,
+                "text": placeholder[start:end],
+                "label": "UNK",
+                "score": None
+            }))
+        new_entities = self._entities + unk_entities
+        return EntityList(new_entities, source_text=source_text)
     
     # Comparison & Analysis
     def compare_with(self, other: 'EntityList', source_text: str, merge: bool = True) -> Dict[str, Any]:
@@ -680,8 +681,8 @@ class EntityList:
             "positive_score": positive_score,
             "diff_baseline": diff,
             "diff_new_preds": old_diff,
-            "baseline_entities": baseline.entities,
-            "comparison_entities": new_predictions.entities
+            "baseline_entities": baseline,
+            "comparison_entities": new_predictions
         }
     
     def has_overlap(self, entity: Union[Dict,'Entity']) -> Dict[str, Any]:
