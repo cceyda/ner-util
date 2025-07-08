@@ -755,7 +755,7 @@ class EntityList:
         """Return entities as a list of dictionaries."""
         return [entity.to_dict() for entity in self._entities]
     
-    def to_label_map(self) -> Dict[str, str]:
+    def to_label_map(self, separator: Optional[str]= "|", sort:bool = True, remove_dupes: bool=True) -> Dict[str, str]:
         """
         Convert entities to a dictionary mapping labels to comma-delimited text values.
         
@@ -773,10 +773,17 @@ class EntityList:
             text = entity.text  # Handle cases where text field might be missing
             
             if label in label_map:
-                label_map[label] += f", {text}"
+                label_map[label].append(text)
             else:
-                label_map[label] = text
-        
+                label_map[label] = [text]
+
+        for label, texts in label_map.items():
+            if remove_dupes:
+                texts = list(set(texts))  # Remove duplicates
+            if sort:
+                texts = sorted(texts)  # Sort the texts
+            label_map[label] = separator.join(texts)  # Join texts with the separator
+            
         return label_map
     
     def to_polars_df(self):
