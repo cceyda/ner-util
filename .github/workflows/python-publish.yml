@@ -29,7 +29,6 @@ on:
         type: string
 
 permissions:
-  contents: read
   contents: write
 
 jobs:
