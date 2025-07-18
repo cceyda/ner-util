@@ -330,7 +330,7 @@ class EntityList:
         )
     
     # Format Operations
-    def to_format(self, text_field: str, label_field: str, span: bool = False) -> 'EntityList':
+    def to_format(self, text_field: str, label_field: str, span: bool = False, score_precision: Optional[int] = None) -> 'EntityList':
         """Convert entities to default format (text/label)."""
 
         converted = []
@@ -338,7 +338,7 @@ class EntityList:
             entity_dict = {
                     text_field: e.text,
                     label_field: e.label,
-                    **({"score": e.score} if e.score else {})
+                    **({"score": round(e.score, score_precision) if e.score and score_precision is not None else e.score} if e.score else {})
                 }
             if span:
                 entity_dict['span'] = (e.start, e.end)
@@ -351,7 +351,7 @@ class EntityList:
     def to_format_default(self) -> 'EntityList':
         return self.to_format(text_field='text', label_field='label', span=False)
     def to_format_table(self) -> 'EntityList':
-        return self.to_format(text_field='value', label_field='key', span=False)
+        return self.to_format(text_field='value', label_field='key', span=False, score_precision=4)
     def to_format_span(self) -> 'EntityList':
         return self.to_format(text_field='value', label_field='key', span=True)
     
