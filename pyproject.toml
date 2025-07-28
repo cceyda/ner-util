@@ -1,6 +1,6 @@
 [project]
 name = "ner-util"
-version = "0.1.4"
+version = "0.1.5"
 description = "Just another ner utils library"
 readme = "README.md"
 authors = [
