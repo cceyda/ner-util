@@ -103,7 +103,7 @@ class Entity:
         
         return entity_dict
 
-    def __init__(self, entity_dict: Dict[str, Any], text_field: Optional[str] = None, label_field: Optional[str] = None, span: Optional[Tuple[int, int]] = None):
+    def __init__(self, entity_dict: Dict[str, Any], text_field: Optional[str] = None, label_field: Optional[str] = None):
         """
         Initialize Entity wrapper with auto-detection or explicit field mapping.
         
@@ -111,7 +111,6 @@ class Entity:
             entity_dict: The underlying entity dictionary
             text_field: Name of the text field ('text', 'value', etc.). If None, auto-detect.
             label_field: Name of the label field ('label', 'key', etc.). If None, auto-detect.
-            span: Optional (start, end) tuple to set span values
         """
         self._entity = entity_dict
         
@@ -330,30 +329,52 @@ class EntityList:
         )
     
     # Format Operations
-    def to_format(self, text_field: str, label_field: str, span: bool = False, score_precision: Optional[int] = None) -> 'EntityList':
-        """Convert entities to default format (text/label)."""
+    def to_format(self, text_field: str, label_field: str, return_span: bool = False, score_precision: Optional[int] = None, return_index:bool = True, return_score:bool = True) -> 'EntityList':
+        """Convert entities to any format."""
 
         converted = []
         for e in self._entities:
             entity_dict = {
                     text_field: e.text,
                     label_field: e.label,
-                    **({"score": round(e.score, score_precision) if e.score and score_precision is not None else e.score} if e.score else {})
                 }
-            if span:
+            if return_score and e.score is not None:
+                entity_dict['score'] = round(e.score, score_precision) if score_precision is not None else e.score
+            if return_span:
                 entity_dict['span'] = (e.start, e.end)
-            else:
+            if return_index:
                 entity_dict['start'] = e.start
                 entity_dict['end'] = e.end
             converted.append(entity_dict)
         return converted
 
-    def to_format_default(self) -> 'EntityList':
-        return self.to_format(text_field='text', label_field='label', span=False)
-    def to_format_table(self) -> 'EntityList':
-        return self.to_format(text_field='value', label_field='key', span=False, score_precision=4)
-    def to_format_span(self) -> 'EntityList':
-        return self.to_format(text_field='value', label_field='key', span=True)
+    def to_format_default(self, **kwargs) -> 'EntityList':
+        default_kwargs = {
+            'text_field': 'text',
+            'label_field': 'label',
+            'return_span': False
+        }
+        default_kwargs.update(kwargs)
+
+        return self.to_format(**default_kwargs)
+    def to_format_table(self, **kwargs) -> 'EntityList':
+        default_kwargs = {
+            'text_field': 'value',
+            'label_field': 'key',
+            'return_span': False,
+            "score_precision": 4,
+        }
+        default_kwargs.update(kwargs)
+        return self.to_format(**default_kwargs)
+    def to_format_span(self, **kwargs) -> 'EntityList':
+        default_kwargs = {
+            'text_field': 'value',
+            'label_field': 'key',
+            'return_span': True,
+            "score_precision": 4,
+        }
+        default_kwargs.update(kwargs)
+        return self.to_format(**default_kwargs)
     
     def to_dict(self) -> List[Dict[str, Any]]:
         """Return entities as a list of dictionaries."""
