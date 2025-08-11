@@ -607,8 +607,6 @@ class EntityList:
         Returns:
             New EntityList with 'UNK' entities added
         """
-        if not self._entities:
-            return self.copy()
         
         source_text = self._validate(source_text)
         
